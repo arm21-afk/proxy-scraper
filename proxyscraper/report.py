@@ -5,6 +5,7 @@ get through to the big sites, where they are. Rebuilt with every run from the sa
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from collections import Counter
 from datetime import datetime, timedelta
 from html import escape
@@ -222,6 +223,7 @@ def page(f: dict) -> str:
 <title>The week in free proxies ({escape(_period(f))}) | proxy-scraper</title>
 <meta name="description" content="{escape(_lines(f)[0])}">
 <link rel="canonical" href="{REPORT_URL}">
+<link rel="alternate" type="application/atom+xml" title="The week in free proxies" href="{REPORT_URL}feed.xml">
 <meta property="og:title" content="The week in free proxies">
 <meta property="og:description" content="{escape(_lines(f)[0])}">
 <meta property="og:image" content="{SITE_URL}og.png">
@@ -256,6 +258,7 @@ picture img {{ width: 100%; height: auto; border-radius: 16px; }}
     <img src="{root}chart-dark.svg" alt="Working proxies over the week, by protocol">
   </picture>
   <footer><span>Want to share it? <a href="report.md">Markdown</a> · <a href="post.txt">a short post</a> ·
+  <a href="feed.xml">RSS/Atom feed</a> ·
   <a href="https://github.com/maximilianfeix/proxy-scraper">the code</a></span></footer>
 </div>
 </body>
@@ -263,11 +266,63 @@ picture img {{ width: 100%; height: auto; border-radius: 16px; }}
 """
 
 
-def write_report(f: dict, out: Path) -> None:
+FEED_WEEKS = 12
+_ATOM = "{http://www.w3.org/2005/Atom}"
+
+
+def feed(f: dict, previous: Optional[str]) -> str:
+    """Atom feed with one entry per finished ISO week. The first run of a week adds the entry for the week that just
+    ended; every later run that week hands back the feed unchanged – feed readers and Slack/Discord bridges see one
+    new entry a week, not an update every hour. `previous`: the feed from the last run (None or garbage: start over)."""
+    now = f["now"]
+    monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    year, week, _ = (monday - timedelta(days=1)).isocalendar()
+    entry_id = f"{REPORT_URL}{year}-W{week:02d}"
+    kept: List[str] = []
+    if previous:
+        try:
+            root = ET.fromstring(previous)
+            old = root.findall(f"{_ATOM}entry")
+        except ET.ParseError:
+            old = []
+        if any((e.findtext(f"{_ATOM}id") or "") == entry_id for e in old):
+            return previous  # this week's entry is out already – leave it exactly as it is
+        ET.register_namespace("", _ATOM[1:-1])
+        kept = [ET.tostring(e, encoding="unicode") for e in old][:FEED_WEEKS - 1]
+    stamp = monday.strftime("%Y-%m-%dT%H:%M:%SZ")
+    text = "\n\n".join(_lines(f))
+    new = f"""<entry>
+    <title>The week in free proxies: {escape(_period(f))}</title>
+    <link rel="alternate" href="{REPORT_URL}"/>
+    <id>{entry_id}</id>
+    <updated>{stamp}</updated>
+    <content type="text">{escape(text)}</content>
+  </entry>"""
+    body = "\n  ".join([new, *kept])
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>The week in free proxies</title>
+  <subtitle>How long free proxies last and which sites let them through – from hourly checks by proxy-scraper</subtitle>
+  <link rel="self" href="{REPORT_URL}feed.xml"/>
+  <link rel="alternate" href="{REPORT_URL}"/>
+  <id>{REPORT_URL}</id>
+  <updated>{stamp}</updated>
+  <author><name>proxy-scraper</name></author>
+  {body}
+</feed>
+"""
+
+
+def write_report(f: dict, out: Path, previous_feed: Optional[Path] = None) -> None:
     folder = out / "report"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "index.html").write_text(page(f), encoding="utf-8")
     (folder / "report.md").write_text(markdown(f), encoding="utf-8")
     (folder / "post.txt").write_text(post(f) + "\n", encoding="utf-8")
+    try:
+        previous = previous_feed.read_text(encoding="utf-8") if previous_feed else None
+    except OSError:
+        previous = None
+    (folder / "feed.xml").write_text(feed(f, previous), encoding="utf-8")
     for theme in THEMES:
         (folder / f"lifetimes-{theme}.svg").write_text(lifetimes_svg(f, theme), encoding="utf-8")
