@@ -27,12 +27,14 @@ import asyncio
 import contextlib
 import email.message
 import io
+import logging
 import os
 import re
 import tempfile
 import threading
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 from rich.console import Console
 
@@ -41,6 +43,8 @@ from .options import Filters, RunOptions, parse_countries
 from .parsing import PROXY_TYPES
 from .targets import parse_target
 from .ui import widgets
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "CheckResult",
@@ -309,6 +313,15 @@ class ProxyResponse:
             raise ConnectionError(f"the body from {self.final_url} was cut off at 2 MB")
 
 
+REFRESH_SECONDS = 300  # proxy_url(): how often the pool behind it looks for a new run's list
+
+
+def _playwright(url: str) -> Dict[str, str]:
+    parts = urlsplit(url)
+    return {"server": f"{parts.scheme}://{parts.hostname}:{parts.port}", "username": parts.username or "",
+            "password": parts.password or ""}
+
+
 class ProxyRotator:
     """Loads URLs through proxies from the hourly list and switches to the next one when a proxy fails –
     the loop every scraper writes by hand. HTTPS only through proxies with verified TLS.
@@ -330,6 +343,7 @@ class ProxyRotator:
         self._loop: Optional[asyncio.AbstractEventLoop] = None  # the sync API's own loop, in a thread
         self._thread: Optional[threading.Thread] = None
         self._start_lock = threading.Lock()
+        self._refresher: Optional[asyncio.Task] = None
 
     def _use(self, mode: str) -> None:
         if self._mode is None:
@@ -367,7 +381,43 @@ class ProxyRotator:
                              proxy_country=page["proxy_country"], elapsed_ms=page["elapsed_ms"],
                              truncated=page["body_truncated"])
 
+    async def aproxy_url(self) -> str:
+        self._use("async")
+        return await self._proxy_url()
+
+    async def _proxy_url(self) -> str:
+        from .agent import AgentError
+
+        if self._fetcher is None:
+            self._fetcher = self._make_fetcher()
+        try:
+            url = await self._fetcher.local_proxy(self.protocol, self.country)
+        except AgentError as e:
+            raise ConnectionError(str(e)) from None
+        if self._refresher is None:  # nobody calls get() on this path, so the pool refreshes by itself
+            self._refresher = asyncio.ensure_future(self._keep_fresh())
+        return url
+
+    async def aplaywright_proxy(self) -> Dict[str, str]:
+        self._use("async")
+        return _playwright(await self._proxy_url())
+
+    async def _keep_fresh(self) -> None:
+        from .agent import AgentError
+
+        while True:
+            await asyncio.sleep(REFRESH_SECONDS)
+            try:
+                await self._fetcher.refresh()
+            except AgentError:
+                pass  # GitHub not reachable right now: the pool keeps what it has, next try later
+            except Exception as e:  # a broken list must not end the refreshing for good
+                log.warning("proxy-scraper: could not refresh the proxy list: %s", e)
+
     async def aclose(self) -> None:
+        if self._refresher is not None:
+            self._refresher.cancel()
+            self._refresher = None
         if self._fetcher is not None:
             await self._fetcher.close()
             self._fetcher = None
@@ -380,13 +430,37 @@ class ProxyRotator:
 
     # sync: one event loop in a background thread keeps the proxy server alive between calls
     def get(self, url: str) -> ProxyResponse:
-        with self._start_lock:  # several threads calling get() at once still share one loop
-            self._use("sync")
+        return self._run_sync(self._aget(url))
+
+    def _run_sync(self, coro):
+        with self._start_lock:  # several threads calling at once still share one loop
+            try:
+                self._use("sync")
+            except RuntimeError:
+                coro.close()
+                raise
             if self._loop is None:
                 self._loop = asyncio.new_event_loop()
                 self._thread = threading.Thread(target=self._loop.run_forever, name="proxy-rotator", daemon=True)
                 self._thread.start()
-        return asyncio.run_coroutine_threadsafe(self._aget(url), self._loop).result()
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+
+    def proxy_url(self) -> str:
+        """A local proxy URL for any library – requests, httpx, aiohttp, Playwright, Scrapy, curl:
+
+            with ProxyRotator(country="DE") as rotator:
+                proxy = rotator.proxy_url()
+                requests.get(url, proxies={"http": proxy, "https": proxy})
+
+        Every connection through it gets a proxy from the live list (best first, with failover), HTTPS only
+        through verified-TLS ones. It lives as long as the rotator and takes over each new run's list."""
+        return self._run_sync(self._proxy_url())
+
+    def playwright_proxy(self) -> Dict[str, str]:
+        """proxy_url() the way Playwright wants it – it ignores a login inside the server address:
+
+            browser = p.chromium.launch(proxy=rotator.playwright_proxy())"""
+        return _playwright(self.proxy_url())
 
     def close(self) -> None:
         with self._start_lock:
