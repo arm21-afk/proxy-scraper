@@ -37,6 +37,17 @@ def test_auto_source_only_uses_prefixed_lines():
     assert parse(b"socks4://5.6.7.8:1080\n1.2.3.4:80\n", "auto") == ["socks4 5.6.7.8:1080"]
 
 
+def test_auto_source_mostly_plain_reads_the_plain_lines_as_http():
+    data = b"socks5://9.9.9.9:1080\n" + b"".join(f"1.2.3.{i}:80\n".encode() for i in range(1, 6))
+    got = parse(data, "auto")
+    assert "socks5 9.9.9.9:1080" in got and "http 1.2.3.1:80" in got and len(got) == 6
+
+
+def test_auto_source_without_any_prefix_is_read_as_http():
+    # a generic proxies.txt with plain ip:port lines: before, it gave nothing and got paused as "unreachable"
+    assert parse(b"1.2.3.4:80\n5.6.7.8:3128\n", "auto") == ["http 1.2.3.4:80", "http 5.6.7.8:3128"]
+
+
 def test_private_and_invalid_addresses_are_dropped():
     data = b"10.0.0.1:80\n192.168.1.1:8080\n300.1.1.1:80\n1.1.1.1:70000\n001.002.003.004:0080\n"
     assert parse(data) == ["http 1.2.3.4:80"]
