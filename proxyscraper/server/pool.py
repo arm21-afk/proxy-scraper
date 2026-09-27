@@ -4,12 +4,16 @@ Selection per connection in three steps:
   1. filters from the request (Selection): country, type – via the user name, e.g. "country-de-type-socks5"
   2. sticky: the same session (or with --sticky the same target site) keeps the same proxy for a while
   3. strategy for everything else: weighted (default), random, round-robin, fastest
+
+"Fast" means how quickly a page comes through, not just the first answer: when the proxies come from the live list,
+which measures a download per proxy every hour, that download counts too (#186).
 """
 
 from __future__ import annotations
 
 import random
 import re
+import statistics
 import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Set, Tuple
@@ -20,6 +24,25 @@ DISABLE_AFTER = 3           # this many failures in a row -> out of the rotation
 STRATEGIES = ("weighted", "random", "round-robin", "fastest")
 SESSION_SECONDS = 600       # how long a session (session-…) keeps its proxy when --sticky isn't set
 _TOKEN_RE = re.compile(r"(country|type|session)[-_]([A-Za-z0-9]+)")
+PAGE_KB = 100               # roughly one page – the download the speed step measures
+UNMEASURED_KBPS = 20        # tried in the speed step, no download got through: counted as slow (it passed the checks)
+
+
+def page_ms(result, typical_kbps: Optional[float]) -> float:
+    """Roughly how long a page takes through this proxy: the first answer plus the download.
+
+    typical_kbps is the median measured speed of the set, None when it has no speeds at all (an own scan) – then
+    latency decides alone. The speed step only tries HTTPS-capable proxies: one of those without a speed didn't
+    get the download through, the others were never tried and count as typical."""
+    if not typical_kbps:
+        return result.latency
+    kbps = result.speed_kbps or (UNMEASURED_KBPS if result.https else typical_kbps)
+    return result.latency + PAGE_KB * 1000 / kbps
+
+
+def typical_speed(results) -> Optional[float]:
+    speeds = [r.speed_kbps for r in results if r.speed_kbps]
+    return statistics.median(speeds) if speeds else None
 
 
 @dataclass(frozen=True)
@@ -57,12 +80,17 @@ class PoolEntry:
     fail_streak: int = 0
     active: int = 0
     disabled: bool = False
+    typical_kbps: Optional[float] = None  # set by the pool: median measured speed of its proxies
+
+    @property
+    def cost(self) -> float:
+        return page_ms(self.result, self.typical_kbps)
 
     @property
     def weight(self) -> float:
         # prefer fast and proven ones, but give everyone a chance
         reliability = (self.ok + 1) / (self.ok + self.fail + 2)
-        return reliability / (self.result.latency + 300)
+        return reliability / (self.cost + 300)
 
 
 class ProxyPool:
@@ -71,7 +99,8 @@ class ProxyPool:
                  clock: Callable[[], float] = time.monotonic, strict_tls: bool = False):
         if strategy not in STRATEGIES:
             raise ValueError(f"unknown strategy {strategy!r} (possible: {', '.join(STRATEGIES)})")
-        self.entries = [PoolEntry(r) for r in sorted(results, key=lambda r: r.latency)]
+        typical = typical_speed(results)
+        self.entries = sorted((PoolEntry(r, typical_kbps=typical) for r in results), key=lambda e: e.cost)
         self.rng = rng or random.Random()
         self.strategy = strategy
         self.sticky_seconds = sticky_seconds
@@ -135,8 +164,8 @@ class ProxyPool:
             # the fastest free one; if all are busy, the least busy one (then the faster one)
             idle = [e for e in candidates if not e.active]
             if idle:
-                return min(idle, key=lambda e: (e.result.latency, -e.weight))
-            return min(candidates, key=lambda e: (e.active, e.result.latency))
+                return min(idle, key=lambda e: (e.cost, -e.weight))
+            return min(candidates, key=lambda e: (e.active, e.cost))
         if self.strategy == "round-robin":
             ordered = sorted(candidates, key=lambda e: e.result.key)
             entry = ordered[self._next % len(ordered)]
@@ -186,7 +215,10 @@ class ProxyPool:
         for r in fresh.values():
             kept.append(PoolEntry(r))
             added += 1
-        self.entries = sorted(kept, key=lambda e: e.result.latency)
+        typical = typical_speed([e.result for e in kept])
+        for entry in kept:
+            entry.typical_kbps = typical
+        self.entries = sorted(kept, key=lambda e: e.cost)
         return added
 
     def revive(self, entry: PoolEntry) -> None:

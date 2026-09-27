@@ -11,7 +11,7 @@ def fake(n, **extra):
             for i in range(n)]
 
 
-def run(monkeypatch, tmp_path, env, found=3, rechecked=None):
+def run(monkeypatch, tmp_path, env, found=3, rechecked=None, recheck=None):
     calls = {}
 
     def live(**kwargs):
@@ -20,7 +20,7 @@ def run(monkeypatch, tmp_path, env, found=3, rechecked=None):
 
     def check(urls, **kwargs):
         calls["check"] = list(urls)
-        return fake(found)[:rechecked]
+        return recheck(found) if recheck else fake(found)[:rechecked]
     monkeypatch.setattr(action, "live_proxies", live)
     monkeypatch.setattr(action, "check_proxies", check)
     out = tmp_path / "out.txt"
@@ -36,10 +36,10 @@ def run(monkeypatch, tmp_path, env, found=3, rechecked=None):
 def test_filters_reach_live_proxies_and_outputs_are_set(monkeypatch, tmp_path):
     code, out, calls = run(monkeypatch, tmp_path, {
         "PS_TYPES": "socks5, http", "PS_COUNTRIES": "de,nl", "PS_HTTPS": "true", "PS_MIN_UPTIME": "90",
-        "PS_WORKS_ON": "google", "PS_LIMIT": "2"})
+        "PS_MIN_SPEED": "100", "PS_WORKS_ON": "google", "PS_LIMIT": "2"})
     assert code == 0
     assert calls["live"] == {"types": ["socks5", "http"], "countries": "de,nl", "https": True, "min_uptime": 90,
-                             "works_on": ["google"], "limit": 2}
+                             "min_speed": 100, "works_on": ["google"], "limit": 2}
     assert out["proxy"] == "socks5://1.1.1.0:1080" and out["count"] == "2"  # limit
     file = out["file"]
     assert file.startswith(str(tmp_path)) and Path(file).read_text().splitlines()[0] == "socks5://1.1.1.0:1080"
@@ -67,3 +67,12 @@ def test_nothing_found_fails_the_step_unless_allowed(monkeypatch, tmp_path, caps
 def test_bad_inputs_are_explained(monkeypatch, tmp_path, capsys):
     code, _, _ = run(monkeypatch, tmp_path, {"PS_LIMIT": "lots"})
     assert code == 1 and "limit" in capsys.readouterr().out
+
+
+
+def test_a_recheck_keeps_the_live_lists_order(monkeypatch, tmp_path):
+    # the live list comes ranked by page load; the recheck's latencies say nothing about downloads
+    def slower_first(n):  # from the runner, the list's first proxy happens to answer slowest
+        return [CheckResult(r.key, r.ptype, r.proxy, 500 - r.latency, r.exit_ip, True) for r in fake(n)]
+    _, out, _ = run(monkeypatch, tmp_path, {"PS_RECHECK": "true"}, recheck=slower_first)
+    assert out["proxy"] == "socks5://1.1.1.0:1080"
