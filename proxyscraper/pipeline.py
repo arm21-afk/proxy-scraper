@@ -9,7 +9,10 @@ import random
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
 
 from . import sources as srcs
 from .asndb import ProviderLookup
@@ -45,12 +48,18 @@ class SourcePlan:
     meta_ok: int
     meta_total: int
     n_discovered: int
+    n_own: int = 0
     discovery_ran: bool = False
     discovery_token: bool = False
 
 
 async def collect_sources(opts: RunOptions, quality: srcs.SourceStats) -> SourcePlan:
-    """Curated + meta + discovered sources, minus the ones learned to be bad."""
+    """Curated + meta + discovered sources, minus the ones learned to be bad, plus the own ones (--source)."""
+    own = dict(srcs.parse_source_spec(spec) for spec in opts.sources)
+    wanted = set(opts.types)
+    own = {u: t for u, t in own.items() if t == "auto" or t in wanted}
+    if opts.only_sources:
+        return SourcePlan(own, Counter(), 0, 0, 0, 0, 0, n_own=len(own))
     sources, meta = srcs.load_source_file()
     n_curated = len(sources)
 
@@ -77,7 +86,6 @@ async def collect_sources(opts: RunOptions, quality: srcs.SourceStats) -> Source
         for url, ptype in extra.items():
             sources.setdefault(url, ptype)
 
-    wanted = set(opts.types)
     sources = {u: t for u, t in sources.items() if t == "auto" or t in wanted}
     skipped: Counter = Counter()
     if not opts.all_sources:
@@ -89,8 +97,9 @@ async def collect_sources(opts: RunOptions, quality: srcs.SourceStats) -> Source
             else:
                 active[url] = ptype
         sources = active
+    sources.update(own)  # asked for by name – never skipped, and the given type wins
     return SourcePlan(
-        sources, skipped, n_curated, len(meta_found), meta_ok, len(meta), len(discovered),
+        sources, skipped, n_curated, len(meta_found), meta_ok, len(meta), len(discovered), n_own=len(own),
         discovery_ran=run_discovery, discovery_token=token is not None,
     )
 
@@ -123,7 +132,9 @@ async def scrape(sources: Dict[str, str], types, quality: srcs.SourceStats, view
     with ProcessPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) - 1)) as pool:
 
         async def download(url: str):
-            """-> (data, keys from the cache). Exactly one of the two is set."""
+            """-> (data, headers, keys from the cache). Exactly one of data and keys is set."""
+            if url.startswith("file://"):  # own list from --source
+                return await asyncio.to_thread(Path(url2pathname(urlsplit(url).path)).read_bytes), {}, None
             conditional = cache.conditional_headers(url, sources[url])
             async with sem:
                 status, headers, body = await http_request(url, timeout=30, headers=conditional or None)
@@ -152,7 +163,8 @@ async def scrape(sources: Dict[str, str], types, quality: srcs.SourceStats, view
                         keys = parse_blob(data, sources[url], parse_types)
                     else:
                         keys = await loop.run_in_executor(pool, parse_blob, data, sources[url], parse_types)
-                    cache.store(url, headers, keys, sources[url])
+                    if not url.startswith("file://"):
+                        cache.store(url, headers, keys, sources[url])
             except Exception:  # source unreachable/broken – counts as a failure in the statistics
                 pass
             n = parsed = 0
