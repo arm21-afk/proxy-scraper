@@ -11,6 +11,7 @@
 [![Live proxies](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmaximilianfeix%2Fproxy-scraper%2Fproxy-list%2Fbadges%2Ftotal.json&style=flat-square&labelColor=121113)](#live-list)
 [![PyPI](https://img.shields.io/pypi/v/proxy-scraper-cli?style=flat-square&color=D4F77A&labelColor=121113&label=pypi)](https://pypi.org/project/proxy-scraper-cli/)
 [![Python](https://img.shields.io/badge/python-3.9–3.13-D4F77A?style=flat-square&labelColor=121113)](pyproject.toml)
+[![Stars](https://img.shields.io/github/stars/maximilianfeix/proxy-scraper?style=flat-square&color=D4F77A&labelColor=121113)](https://github.com/maximilianfeix/proxy-scraper/stargazers)
 [![License](https://img.shields.io/badge/license-MIT-D4F77A?style=flat-square&labelColor=121113)](LICENSE)
 
 <a href="https://maximilianfeix.github.io/proxy-scraper/"><img src="https://img.shields.io/badge/Browse_the_live_list-D4F77A?style=for-the-badge&labelColor=121113" alt="Browse the live list"></a>
@@ -53,7 +54,7 @@ Most free proxy lists are 95 % dead, and a good part of the rest are honeypots o
 - [Options](#options)
 - [GitHub Actions](#github-actions)
 - [FAQ](#faq)
-- [Roadmap](#roadmap) · [Contributing](#contributing) · [Acknowledgements](#acknowledgements)
+- [Roadmap](#roadmap) · [Contributing](#contributing) · [Community](#community) · [Acknowledgements](#acknowledgements)
 
 </details>
 
@@ -937,6 +938,20 @@ proxyscraper/
 ```
 
 </details>
+
+<a id="community"></a>
+
+## Community
+
+Questions, ideas and things you built with it go to [Discussions](https://github.com/maximilianfeix/proxy-scraper/discussions) – bugs to the [issues](../../issues). If proxy-scraper saves you time, a ⭐ helps others find it.
+
+<a href="https://star-history.com/#maximilianfeix/proxy-scraper&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=maximilianfeix/proxy-scraper&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=maximilianfeix/proxy-scraper&type=Date">
+    <img alt="Star history of proxy-scraper" src="https://api.star-history.com/svg?repos=maximilianfeix/proxy-scraper&type=Date" width="600">
+  </picture>
+</a>
 
 <a id="acknowledgements"></a>
 
