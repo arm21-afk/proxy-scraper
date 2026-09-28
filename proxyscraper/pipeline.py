@@ -192,13 +192,15 @@ async def scrape(sources: Dict[str, str], types, quality: srcs.SourceStats, view
     return res
 
 
-def prioritize(res: ScrapeResult, quality: srcs.SourceStats, history: ProxyHistory, types) -> List[str]:
+def prioritize(res: ScrapeResult, quality: srcs.SourceStats, history: ProxyHistory, types,
+               listed_only: bool = False) -> List[str]:
     """Order of checking: known working proxies first, then by quality of the sources.
 
-    Within the same source quality, proxies that appear in more lists win.
+    Within the same source quality, proxies that appear in more lists win. listed_only (--only-sources):
+    the history only moves proxies of these lists to the front, it doesn't add others.
     """
     wanted = set(types)
-    known = [k for k in history.ranked_keys() if split_key(k)[0] in wanted]
+    known = [k for k in history.ranked_keys() if split_key(k)[0] in wanted and (not listed_only or k in res.index)]
     known_set = set(known)
 
     scores = [quality.score(u) for u in res.urls]

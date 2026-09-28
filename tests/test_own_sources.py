@@ -84,3 +84,15 @@ def test_a_local_file_is_scraped_without_the_network(tmp_path):
     assert "socks5 user:pw@45.67.89.10:1080" in res.index
     assert {"http 45.67.89.11:8080", "socks5 45.67.89.11:8080"} <= res.index.keys()  # bare: tried as both
     assert not list((tmp_path / "cache").glob("*"))
+
+
+def test_only_sources_keeps_the_history_to_the_own_lists(tmp_path):
+    from proxyscraper.history import ProxyHistory
+    history = ProxyHistory(tmp_path / "h.json")
+    history.record_ok("http 45.67.89.20:80", 100, "45.67.89.20")   # worked before, not in the list
+    history.record_ok("http 45.67.89.11:8080", 100, "45.67.89.11")  # worked before and listed
+    res = pipeline.ScrapeResult(["mine"], {"http 45.67.89.10:80": [0], "http 45.67.89.11:8080": [0]})
+    quality = srcs.SourceStats(tmp_path / "stats.json")
+    assert pipeline.prioritize(res, quality, history, ["http"], listed_only=True) == \
+        ["http 45.67.89.11:8080", "http 45.67.89.10:80"]
+    assert "http 45.67.89.20:80" in pipeline.prioritize(res, quality, history, ["http"])
