@@ -147,6 +147,15 @@ class ProxyPool:
         return (not selection.country or r.country == selection.country) and \
             (not selection.ptype or r.ptype == selection.ptype)
 
+    def choose(self, candidates: List[PoolEntry]) -> Optional[PoolEntry]:
+        """One of `candidates` by the pool's strategy – for callers that filter themselves (the API). None if empty."""
+        return self._choose(candidates) if candidates else None
+
+    def remove(self, entry: PoolEntry) -> None:
+        """Out of the pool (API /pop and /delete) – only a refill that finds it working again brings it back."""
+        self.entries = [e for e in self.entries if e is not entry]
+        self._sticky = {k: v for k, v in self._sticky.items() if v[0] is not entry}
+
     def _choose(self, candidates: List[PoolEntry]) -> PoolEntry:
         if self.strategy == "random":
             return self.rng.choice(candidates)

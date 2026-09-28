@@ -343,6 +343,7 @@ macOS, Linux and Windows, Python 3.9 to 3.13. Only two dependencies: `rich` and 
 | Only proxies that reach *your* target site | ❌ | ✅ `--target` |
 | Learns which sources are worth it | ❌ | ✅ |
 | Usable as a single rotating proxy | ❌ | ✅ `--serve` |
+| API to fetch a proxy (proxy_pool compatible) | ❌ | ✅ [`/get`](#pool-api) |
 | Ready-made list without running anything | ✅ | ✅ [live list](#live-list) |
 
 <a id="examples"></a>
@@ -477,6 +478,38 @@ Without a password, `--serve-host` means **anyone who reaches the port can use i
 - listens on `127.0.0.1` only (unless `--serve-host` says otherwise), optionally with a password; live view with requests, success rate, pool and the latest connections
 
 In testing: 20 of 20 HTTPS requests succeeded, over 15 different exit IPs. In the wizard this is **Proxy server right away**.
+
+<a id="pool-api"></a>
+
+### Proxy pool API
+
+Some programs want a proxy *address*, not a proxy – to hand it to a browser, a worker or a queue. The same port answers plain HTTP requests with one:
+
+```bash
+curl http://127.0.0.1:8899/get                          # one proxy as JSON, chosen like a connection would be
+curl "http://127.0.0.1:8899/get?country=DE&https=1&format=txt"   # → http://203.0.113.7:8080
+curl "http://127.0.0.1:8899/all?protocol=socks5&limit=20"        # the 20 best SOCKS5 proxies
+curl "http://127.0.0.1:8899/report?proxy=203.0.113.7:8080&ok=0"  # it failed you – three times and it's out
+```
+
+| Endpoint | What it does |
+|---|---|
+| `/get` | one proxy, picked by the `--rotate` strategy |
+| `/pop` | like `/get`, and the proxy leaves the pool |
+| `/all` | every usable proxy, best first (`limit=N`) |
+| `/count` | totals by type and country |
+| `/delete?proxy=IP:PORT` | take a proxy out |
+| `/report?proxy=IP:PORT&ok=0` | feedback from your own requests |
+
+Filters work on `/get`, `/pop` and `/all`: `country=DE,AT`, `protocol=socks5`, `https=1`, `anonymity=elite`, `max_latency=1500`, and `format=txt` for plain URLs. With `--serve-password` the API wants it as Basic auth, like the status page.
+
+**Coming from [jhao104/proxy_pool](https://github.com/jhao104/proxy_pool)?** The endpoints, `type=https` and the JSON fields (`proxy`, `https`, `region`, `anonymous`, `check_count`, `fail_count`, …) are the same, so point your code at port 8899 and it keeps working – without Redis, and with proxies that passed the honeypot, tampering and TLS checks:
+
+```python
+import requests
+proxy = requests.get("http://127.0.0.1:8899/get?type=https").json()["url"]   # e.g. socks5://…, type included
+requests.get("https://example.com", proxies={"http": proxy, "https": proxy})
+```
 
 <a id="discord-bot"></a>
 
@@ -883,7 +916,7 @@ proxyscraper/
 ├── targets.py          target sites for --target
 ├── output.py           result files
 ├── exporters.py        proxychains, Clash, sing-box and curl formats (--export)
-├── server/             rotating proxy server (--serve): pool · http · upstream · socks · status · core
+├── server/             rotating proxy server (--serve): pool · http · upstream · socks · status · api · core
 ├── api.py              find_proxies() / check_proxies() for Python
 ├── agent.py            MCP tools without the SDK: live list, filters, fetch through proxies
 ├── mcp_server.py       MCP server (proxy-scraper-mcp) for AI agents

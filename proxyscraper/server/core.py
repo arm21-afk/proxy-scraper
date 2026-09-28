@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from typing import Deque, Dict, Optional, Set, Tuple
 
 from ..handshake import parse_endpoint, with_proxy_auth
+from . import api
+from .api import API_PREFIX
 from .http import (
     TLS_HANDSHAKE,
     ResponseScreen,
@@ -137,6 +139,9 @@ class RotatingServer:
                 head = first + await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), self.timeout)
                 if head.startswith(STATUS_PREFIX):
                     await self._serve_status(writer, head)
+                    return
+                if head.startswith(API_PREFIX):  # "GET /get" – a proxy request would carry an absolute URL
+                    await self._serve_api(writer, head)
                     return
                 method, host, port, path, headers = parse_request_head(head)
                 if not password_ok(headers, self.password):
@@ -489,21 +494,37 @@ class RotatingServer:
             self.stats.failed += 1
 
     async def _serve_status(self, writer, head: bytes) -> None:
+        if not await self._local_auth(writer, head):
+            return
         target = head.split(b" ", 2)[1].split(b"?", 1)[0]
         kind = b"application/json"
-        headers = [tuple(part.strip() for part in line.split(b":", 1)) for line in head.split(b"\r\n")[1:]
-                   if b":" in line]
-        if not password_ok(headers, self.password, b"authorization"):
-            writer.write(b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"proxy-scraper\"\r\n"
-                         b"Content-Length: 0\r\nConnection: close\r\n\r\n")
-            await writer.drain()
-            return
         if target == STATUS_PATH:
             status, body = b"200 OK", status_json(self).encode()
         elif target == METRICS_PATH:
             status, body, kind = b"200 OK", metrics_text(self).encode(), METRICS_TYPE
         else:  # only exactly these paths – typos shouldn't silently return the status
             status, body = b"404 Not Found", b'{"error": "unknown path, try /__proxy-scraper/status or /metrics"}'
+        await self._answer(writer, status, kind, body)
+
+    async def _serve_api(self, writer, head: bytes) -> None:
+        if not await self._local_auth(writer, head):
+            return
+        status, kind, body = api.handle(self.pool, head.split(b" ", 2)[1])
+        await self._answer(writer, status, kind, body)
+
+    async def _local_auth(self, writer, head: bytes) -> bool:
+        """Status and API are asked of the server itself, so the password comes as Authorization, not Proxy-."""
+        headers = [tuple(part.strip() for part in line.split(b":", 1)) for line in head.split(b"\r\n")[1:]
+                   if b":" in line]
+        if password_ok(headers, self.password, b"authorization"):
+            return True
+        writer.write(b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"proxy-scraper\"\r\n"
+                     b"Content-Length: 0\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        return False
+
+    @staticmethod
+    async def _answer(writer, status: bytes, kind: bytes, body: bytes) -> None:
         writer.write(b"HTTP/1.1 " + status + b"\r\nContent-Type: " + kind + b"\r\nCache-Control: no-store\r\n"
                      b"Content-Length: %d\r\nConnection: close\r\n\r\n" % len(body) + body)
         await writer.drain()

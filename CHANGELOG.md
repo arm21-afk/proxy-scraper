@@ -4,6 +4,9 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+- Proxy pool API on the `--serve` port: `/get`, `/pop`, `/all`, `/count`, `/delete` and `/report`, with filters for country, protocol, HTTPS, anonymity and latency, and `format=txt` for plain URLs. Endpoints and JSON fields follow jhao104/proxy_pool, so code written for it works unchanged. With `--serve-password` it wants the password as Basic auth, like the status page
+
 ## [1.20.0] – 2026-09-28
 
 ### Added
