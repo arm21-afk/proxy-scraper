@@ -916,7 +916,7 @@ proxyscraper/
 ├── targets.py          target sites for --target
 ├── output.py           result files
 ├── exporters.py        proxychains, Clash, sing-box and curl formats (--export)
-├── server/             rotating proxy server (--serve): pool · http · upstream · socks · status · core
+├── server/             rotating proxy server (--serve): pool · http · upstream · socks · status · api · core
 ├── api.py              find_proxies() / check_proxies() for Python
 ├── agent.py            MCP tools without the SDK: live list, filters, fetch through proxies
 ├── mcp_server.py       MCP server (proxy-scraper-mcp) for AI agents
