@@ -327,8 +327,10 @@ class Run:
         plan = await collect_sources(self.opts, self.quality)
         info("Sources", Text.assemble(
             (fmt(len(plan.sources)), f"bold {ACCENT}"), " active  ",
-            (f"({fmt(plan.n_curated)} curated · {fmt(plan.n_meta)} from {plan.meta_ok}/{plan.meta_total} "
-             f"meta lists · {fmt(plan.n_discovered)} discovered)", MUTED),
+            (f"({fmt(plan.n_own)} own)" if self.opts.only_sources else
+             f"({fmt(plan.n_curated)} curated · {fmt(plan.n_meta)} from {plan.meta_ok}/{plan.meta_total} "
+             f"meta lists · {fmt(plan.n_discovered)} discovered"
+             + (f" · {fmt(plan.n_own)} own)" if plan.n_own else ")"), MUTED),
         ))
         if plan.discovery_ran and not plan.discovery_token:
             note("GitHub discovery is limited without a token – run `gh auth login` or set GITHUB_TOKEN.",
@@ -355,7 +357,7 @@ class Run:
             hosts = sorted(INSECURE_HOSTS)
             note(f"Certificate could not be verified (TLS inspection on this network?), loaded anyway: "
                  f"{', '.join(hosts[:4])}{' …' if len(hosts) > 4 else ''}", MUTED, "ℹ")
-        return prioritize(res, self.quality, self.history, self.opts.types)
+        return prioritize(res, self.quality, self.history, self.opts.types, listed_only=self.opts.only_sources)
 
     # ------------------------------------------------------------------ phase 3+4: check, learn, report
 

@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import quote, urlencode, urlsplit
+from urllib.request import url2pathname
 
 from .parsing import PROXY_TYPES, TYPE_ALIASES, extract_candidates, validate_candidates
 from .paths import DATA_DIR, PACKAGE_DIR, atomic_write
@@ -70,6 +71,29 @@ def normalize_url(url: str) -> Optional[str]:
     if url.startswith(GH_RAW):
         url = url.replace("/refs/heads/", "/", 1)
     return url
+
+
+def parse_source_spec(spec: str) -> Tuple[str, str]:
+    """--source value -> (url, type). 'https://…', a local file, or 'socks5=…' to fix the type.
+
+    Local files become file:// URLs. Without a type prefix the list is 'auto': lines with a scheme keep it,
+    bare ip:port lines are tried as HTTP and SOCKS5 (like untyped lists from other sources)."""
+    ptype, sep, target = spec.strip().partition("=")
+    if sep and TYPE_ALIASES.get(ptype.strip().lower()) in SOURCE_TYPES:
+        ptype = TYPE_ALIASES[ptype.strip().lower()]
+    else:  # no prefix – or an '=' that belongs to a URL query
+        ptype, target = "auto", spec.strip()
+    if not target:
+        raise ValueError("--source needs a URL or a file")
+    if target.startswith(("http://", "https://")):
+        return normalize_url(target) or target, ptype
+    if "://" in target and not target.startswith("file://"):
+        raise ValueError(f"--source: only http(s) URLs and files, not {target.partition('://')[0]}://")
+    # file:///C:/x on Windows: url2pathname, not just cutting off the scheme
+    path = Path(url2pathname(urlsplit(target).path) if target.startswith("file://") else target).expanduser()
+    if not path.is_file():
+        raise ValueError(f"--source: no such file: {path}")
+    return path.resolve().as_uri(), ptype
 
 
 def _add(target: SourceMap, url: str, ptype: str) -> None:
