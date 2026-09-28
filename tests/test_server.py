@@ -124,7 +124,8 @@ def test_all_proxies_dead_gives_502():
 
 def test_bad_request_gives_400():
     async def garbage(server_port, target_port):
-        return await request_via(server_port, b"GET /relativ HTTP/1.1\r\nHost: x\r\n\r\n")
+        # a relative GET is the pool API now (tests/test_serve_api.py) – anything else relative is still garbage
+        return await request_via(server_port, b"POST /relativ HTTP/1.1\r\nHost: x\r\n\r\n")
 
     answer, _, _ = run_server([("http", http_forward_proxy)], garbage)
     assert answer.startswith(b"HTTP/1.1 400")
