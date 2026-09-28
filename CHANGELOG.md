@@ -4,6 +4,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.21.0] – 2026-09-28
+
 ### Added
 - Proxy pool API on the `--serve` port: `/get`, `/pop`, `/all`, `/count`, `/delete` and `/report`, with filters for country, protocol, HTTPS, anonymity and latency, and `format=txt` for plain URLs. Endpoints and JSON fields follow jhao104/proxy_pool, so code written for it works unchanged. With `--serve-password` it wants the password as Basic auth, like the status page
 - `--source URL|FILE` (repeatable) adds your own proxy lists – URLs or local files, any text with ip:port, `socks5=…` fixes the type. They are never skipped by the learned source ranking. `--only-sources` loads nothing else, and the history then only reorders proxies from these lists
@@ -229,7 +231,8 @@ First public version.
 - Results as txt, json and csv under `results/`
 - Live dashboard in the terminal
 
-[Unreleased]: https://github.com/maximilianfeix/proxy-scraper/compare/v1.20.0...HEAD
+[Unreleased]: https://github.com/maximilianfeix/proxy-scraper/compare/v1.21.0...HEAD
+[1.21.0]: https://github.com/maximilianfeix/proxy-scraper/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/maximilianfeix/proxy-scraper/compare/v1.19.0...v1.20.0
 [1.19.0]: https://github.com/maximilianfeix/proxy-scraper/compare/v1.18.0...v1.19.0
 [1.18.0]: https://github.com/maximilianfeix/proxy-scraper/compare/v1.17.0...v1.18.0
