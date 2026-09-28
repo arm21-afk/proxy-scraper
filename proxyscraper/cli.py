@@ -246,6 +246,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     s.add_argument("--discover-repos", type=non_negative_int, default=DEFAULT_DISCOVER_REPOS,
                    help=f"max. repos during discovery (default: {DEFAULT_DISCOVER_REPOS}, 40 without a token)")
     s.add_argument("--all-sources", action="store_true", help="also load dead, outdated and unreachable sources")
+    s.add_argument("--source", action="append", metavar="URL|FILE",
+                   help="also load this proxy list (repeatable): a URL or a local file, one proxy per line or "
+                        "any text with ip:port in it; TYPE=… fixes the type, e.g. socks5=https://…/list.txt – "
+                        "without it, lines with a scheme keep theirs and bare ones are tried as HTTP and SOCKS5")
+    s.add_argument("--only-sources", action="store_true",
+                   help="only the lists given with --source – no built-in, meta or discovered sources")
     s.add_argument("--no-cache", action="store_true",
                    help="reload every list completely (otherwise unchanged ones are skipped via ETag)")
     s.add_argument("--list-sources", nargs="?", const=50, type=positive_int, metavar="N",

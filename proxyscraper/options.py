@@ -115,6 +115,8 @@ class RunOptions:
     no_discover: bool = False
     discover_repos: int = DEFAULT_DISCOVER_REPOS
     all_sources: bool = False
+    sources: List[str] = field(default_factory=list)  # own lists (--source): URLs, files, 'socks5=…'
+    only_sources: bool = False  # only the own lists – no curated, meta or discovered ones
     no_cache: bool = False  # reload every list instead of taking unchanged ones from the cache
     no_dnsbl: bool = False  # skip the blocklist lookup of the exit IPs
     serve: int = 0  # port of the rotating proxy server after the run, 0 = off
@@ -149,6 +151,8 @@ class RunOptions:
             raise ValueError("--sticky must not be negative")
         if self.serve_refill < 0:
             raise ValueError("--serve-refill must not be negative")
+        if self.only_sources and not self.sources:
+            raise ValueError("--only-sources needs at least one --source")
         if not 0 <= self.serve <= 65535:
             raise ValueError("port must be between 1 and 65535")
 
@@ -200,6 +204,8 @@ class RunOptions:
             no_discover=args.no_discover,
             discover_repos=args.discover_repos,
             all_sources=args.all_sources,
+            sources=list(dict.fromkeys(args.source or [])),
+            only_sources=args.only_sources,
             no_cache=args.no_cache,
             no_dnsbl=args.no_dnsbl,
             serve=args.serve,
@@ -245,6 +251,9 @@ class RunOptions:
         _flag(argv, "--no-discover", self.no_discover)
         _opt(argv, "--discover-repos", self.discover_repos, DEFAULT_DISCOVER_REPOS)
         _flag(argv, "--all-sources", self.all_sources)
+        for spec in self.sources:
+            argv += ["--source", spec]
+        _flag(argv, "--only-sources", self.only_sources)
         _flag(argv, "--no-cache", self.no_cache)
         _flag(argv, "--no-dnsbl", self.no_dnsbl)
         if self.serve:

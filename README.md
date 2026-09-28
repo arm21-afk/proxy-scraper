@@ -550,6 +550,15 @@ flowchart LR
 </div>
 </details>
 
+### Your own lists
+
+```bash
+proxy-scraper --source https://example.com/my-list.txt --source socks5=./socks.txt   # on top of the 700+ sources
+proxy-scraper --only-sources --source bought.txt --want 50                            # only yours
+```
+
+Any text with `ip:port` works; lines like `socks5://user:pass@host:port` keep their type, bare ones are tried as HTTP and SOCKS5 unless you write `http=…`.
+
 <a id="output"></a>
 
 ## Output
